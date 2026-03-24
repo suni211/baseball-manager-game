@@ -237,8 +237,14 @@ function simulateAtBat(
   // 강심장 스킬
   const mentalClutch = isClutchSituation && hasSkill(batter.skills, '강심장') ? 1.1 : 1.0;
 
+  // 점수차가 클수록 이기고 있는 팀의 집중력 하락 (긴장 풀림)
+  const scoreDiffAbs = Math.abs(scoreDiff);
+  const leadingDebuff = scoreDiff > 3 ? 1 - Math.min(0.15, (scoreDiffAbs - 3) * 0.03) : 1.0;
+  // 지고 있는 팀은 약간의 분발 효과
+  const trailingBuff = scoreDiff < -3 ? 1 + Math.min(0.08, (scoreDiffAbs - 3) * 0.02) : 1.0;
+
   const batterOverall = (bContact * 0.30 + bPower * 0.20 + bEye * 0.25 + bClutch * 0.15 + bMental * 0.10)
-    * batterCondMult * clutchMult * mentalClutch;
+    * batterCondMult * clutchMult * mentalClutch * leadingDebuff * trailingBuff;
   const pitcherOverall = (pVelocity * 0.25 + pControl * 0.30 + pBreaking * 0.25 + pMental * 0.20)
     * pitcherCondMult * pitcherFatigueMult;
 
@@ -280,8 +286,8 @@ function simulateAtBat(
   }
 
   // ---- 볼넷 ----
-  const walkBase = 0.06;
-  const walkChance = walkBase + (bEye / 250) * (1 - pControl / 200) + pitcherTiredness * 0.08;
+  const walkBase = 0.05;
+  const walkChance = walkBase + (bEye / 300) * (1 - pControl / 200) + pitcherTiredness * 0.06;
   if (roll < 0.015 + walkChance) {
     return {
       outcome: '볼넷', description: `${batter.name} 볼넷으로 출루`,
@@ -302,12 +308,15 @@ function simulateAtBat(
   }
 
   // ---- 안타 판정 ----
-  const hitChance = matchup * 0.55;
+  // matchup을 0.35~0.65 범위로 제한하여 팀 간 격차 완화
+  const clampedMatchup = Math.max(0.35, Math.min(0.65, matchup));
+  const hitChance = clampedMatchup * 0.45;
   if (roll < 0.015 + walkChance + kChance + hitChance) {
     const powerRoll = Math.random();
-    const hrChance = (bPower / 600) * 0.9;
-    const tripleChance = (bSpeed / 500) * 0.35;
-    const doubleChance = (bPower / 350) * 0.55;
+    // 장타 확률 하향 조정
+    const hrChance = (bPower / 800) * 0.7;
+    const tripleChance = (bSpeed / 600) * 0.25;
+    const doubleChance = (bPower / 450) * 0.45;
 
     if (powerRoll < hrChance) {
       const rbi = runnersOnBase + 1;
@@ -413,10 +422,13 @@ function simulateHalfInning(
   let hits = 0;
   let errors = 0;
   let runners: Runner[] = [];
+  let atBatsThisInning = 0;
+  const MAX_AT_BATS_PER_INNING = 15; // 무한 이닝 방지
 
   const pitcher = fielding.pitchers[fielding.currentPitcherIdx];
 
-  while (outs < 3) {
+  while (outs < 3 && atBatsThisInning < MAX_AT_BATS_PER_INNING) {
+    atBatsThisInning++;
     const batter = batting.batters[batting.currentBatterIdx];
     const scoreDiff = batting.score - fielding.score;
 
@@ -642,10 +654,12 @@ function simulateHalfInning(
       }
     }
 
-    // 주자 정리 (4루 이상 = 홈인)
+    // 주자 정리 (4루 이상 = 홈인) - 히트앤런 등으로 추가 진루한 경우만
     const scoredRunners = runners.filter(r => r.base > 3);
-    runs += scoredRunners.length;
-    runners = runners.filter(r => r.base <= 3);
+    if (scoredRunners.length > 0) {
+      runs += scoredRunners.length;
+      runners = runners.filter(r => r.base <= 3);
+    }
 
     batting.currentBatterIdx = (batting.currentBatterIdx + 1) % 9;
 
@@ -794,6 +808,18 @@ export async function simulateMatch(matchId: number): Promise<MatchResult> {
     inningsData.push({ inning, half: '초', runs: topResult.runs, hits: topResult.hits, errors: topResult.errors, teamId: m.away_team_id });
     allEvents.push(`${inning}회초: ${m.away_name} ${topResult.runs}점`);
 
+    // --- 콜드게임 체크 (5회 이후 10점차, 7회 이후 7점차) ---
+    const currentDiff = Math.abs(homeLineup.score - awayLineup.score);
+    if ((inning >= 5 && currentDiff >= 10) || (inning >= 7 && currentDiff >= 7)) {
+      playLog.push({
+        inning, half: '초', atBatNumber: atBatCounter.count, eventType: '콜드게임',
+        description: `${currentDiff}점 차 콜드게임! 경기 종료!`,
+        batterId: null, pitcherId: null, runnersOn: '', outs: 3,
+        scoreHome: homeLineup.score, scoreAway: awayLineup.score
+      });
+      break;
+    }
+
     // --- 말 (홈 공격) ---
     // 9회말 이후, 홈팀 리드면 생략
     if (inning >= 9 && homeLineup.score > awayLineup.score) {
@@ -813,6 +839,18 @@ export async function simulateMatch(matchId: number): Promise<MatchResult> {
     homeLineup.score += bottomResult.runs;
     inningsData.push({ inning, half: '말', runs: bottomResult.runs, hits: bottomResult.hits, errors: bottomResult.errors, teamId: m.home_team_id });
     allEvents.push(`${inning}회말: ${m.home_name} ${bottomResult.runs}점`);
+
+    // 콜드게임 체크 (말 이후)
+    const diffAfterBottom = Math.abs(homeLineup.score - awayLineup.score);
+    if ((inning >= 5 && diffAfterBottom >= 10) || (inning >= 7 && diffAfterBottom >= 7)) {
+      playLog.push({
+        inning, half: '말', atBatNumber: atBatCounter.count, eventType: '콜드게임',
+        description: `${diffAfterBottom}점 차 콜드게임! 경기 종료!`,
+        batterId: null, pitcherId: null, runnersOn: '', outs: 3,
+        scoreHome: homeLineup.score, scoreAway: awayLineup.score
+      });
+      break;
+    }
 
     // 끝내기 체크
     if (inning >= 9 && homeLineup.score > awayLineup.score) {

@@ -15,6 +15,7 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
     { path: '/training', label: '훈련' },
     { path: '/schedule', label: '일정' },
     { path: '/standings', label: '순위' },
+    { path: '/stats', label: '기록실' },
     { path: '/scout', label: '스카우트' },
     { path: '/finance', label: '재정' },
     { path: '/tactics', label: '전술' },

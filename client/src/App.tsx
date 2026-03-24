@@ -20,6 +20,7 @@ import LeaguePage from './pages/LeaguePage';
 import TeamDetailPage from './pages/TeamDetailPage';
 import LiveMatchPage from './pages/LiveMatchPage';
 import ManagerPage from './pages/ManagerPage';
+import LeagueStatsPage from './pages/LeagueStatsPage';
 
 interface User {
   id: number;
@@ -124,6 +125,7 @@ function App() {
           <Route path="/league" element={user ? <LeaguePage /> : <Navigate to="/login" />} />
           <Route path="/team/:id" element={user ? <TeamDetailPage /> : <Navigate to="/login" />} />
           <Route path="/live/:id" element={user ? <LiveMatchPage /> : <Navigate to="/login" />} />
+          <Route path="/stats" element={user ? <LeagueStatsPage /> : <Navigate to="/login" />} />
           <Route path="/manager" element={user ? <ManagerPage user={user} onTeamChange={handleTeamChange} /> : <Navigate to="/login" />} />
           <Route path="/admin" element={user?.role === 'admin' ? <AdminPage /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />

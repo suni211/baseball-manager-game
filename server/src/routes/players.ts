@@ -56,6 +56,84 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// 리그 종합 타격 랭킹
+router.get('/stats/batting-leaders', async (req, res) => {
+  try {
+    const { seasonId, sort = 'batting_avg', limit = '20' } = req.query;
+
+    const allowedSorts: Record<string, string> = {
+      batting_avg: 'sbs.batting_avg', home_runs: 'sbs.home_runs', rbi: 'sbs.rbi',
+      hits: 'sbs.hits', runs: 'sbs.runs', stolen_bases: 'sbs.stolen_bases',
+      obp: 'sbs.obp', slg: 'sbs.slg', ops: 'sbs.ops', doubles: 'sbs.doubles',
+      triples: 'sbs.triples', walks: 'sbs.walks', strikeouts: 'sbs.strikeouts'
+    };
+    const orderCol = allowedSorts[sort as string] || 'sbs.batting_avg';
+
+    let query = `
+      SELECT sbs.*, p.name as player_name, p.position, p.grade,
+             t.name as team_name, s.year
+      FROM season_batting_stats sbs
+      JOIN players p ON sbs.player_id = p.id
+      JOIN teams t ON sbs.team_id = t.id
+      JOIN seasons s ON sbs.season_id = s.id
+      WHERE sbs.at_bats >= 10
+    `;
+    const params: any[] = [];
+    if (seasonId) {
+      params.push(seasonId);
+      query += ` AND sbs.season_id = $${params.length}`;
+    } else {
+      query += ` AND s.is_active = TRUE`;
+    }
+    query += ` ORDER BY ${orderCol} DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit as string));
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
+// 리그 종합 투구 랭킹
+router.get('/stats/pitching-leaders', async (req, res) => {
+  try {
+    const { seasonId, sort = 'era', limit = '20' } = req.query;
+
+    const allowedSorts: Record<string, string> = {
+      era: 'sps.era', wins: 'sps.wins', saves: 'sps.saves',
+      strikeouts_pitched: 'sps.strikeouts_pitched', whip: 'sps.whip',
+      innings_pitched: 'sps.innings_pitched'
+    };
+    const orderCol = allowedSorts[sort as string] || 'sps.era';
+    const orderDir = sort === 'era' || sort === 'whip' ? 'ASC' : 'DESC';
+
+    let query = `
+      SELECT sps.*, p.name as player_name, p.position, p.pitcher_role, p.grade,
+             t.name as team_name, s.year
+      FROM season_pitching_stats sps
+      JOIN players p ON sps.player_id = p.id
+      JOIN teams t ON sps.team_id = t.id
+      JOIN seasons s ON sps.season_id = s.id
+      WHERE sps.innings_pitched >= 3
+    `;
+    const params: any[] = [];
+    if (seasonId) {
+      params.push(seasonId);
+      query += ` AND sps.season_id = $${params.length}`;
+    } else {
+      query += ` AND s.is_active = TRUE`;
+    }
+    query += ` ORDER BY ${orderCol} ${orderDir} LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit as string));
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
 // 선발 로스터 설정 (23명)
 router.post('/roster', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {

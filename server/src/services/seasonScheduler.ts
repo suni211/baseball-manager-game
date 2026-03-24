@@ -11,6 +11,26 @@ import {
 import { RealtimeMatchService } from './realtimeMatch';
 
 // =============================================
+// 한국 시간(KST) 유틸리티
+// =============================================
+
+/** 현재 한국 시간을 반환 */
+function nowKST(): Date {
+  const now = new Date();
+  // UTC + 9시간 = KST. UTC 기준으로 KST 시각을 Date 객체의 로컬 필드에 넣는다.
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const utc = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  return new Date(utc + kstOffset);
+}
+
+/** 임의의 Date를 KST로 변환 */
+function toKST(date: Date): Date {
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const utc = date.getTime() + date.getTimezoneOffset() * 60 * 1000;
+  return new Date(utc + kstOffset);
+}
+
+// =============================================
 // 시즌 페이즈 순서 및 기간 설정
 // =============================================
 
@@ -26,7 +46,7 @@ const PHASE_DURATION: Record<string, number> = {
 };
 
 // 시간당 동시 진행 경기 수
-const MATCHES_PER_HOUR = 4;
+const MATCHES_PER_HOUR = 11;
 
 // =============================================
 // 시즌 스케줄러
@@ -226,17 +246,20 @@ export class SeasonScheduler {
     const activeHoursPerDay = 14; // 09:00 ~ 23:00
     const totalActiveHours = activeHoursPerDay * 2; // 2일
 
-    const now = new Date();
-    const startTime = new Date(now);
+    // KST 기준으로 시간 슬롯 생성
+    const kstNow = nowKST();
+    const startTime = new Date(kstNow);
     startTime.setMinutes(0, 0, 0);
-    if (startTime <= now) {
-      startTime.setHours(startTime.getHours() + 1);
-    }
+    // 현재 시간 슬롯부터 포함 (다음 시간이 아니라 현재 정시부터)
     if (startTime.getHours() < 9) {
       startTime.setHours(9, 0, 0, 0);
     }
+    if (startTime.getHours() >= 23) {
+      startTime.setDate(startTime.getDate() + 1);
+      startTime.setHours(9, 0, 0, 0);
+    }
 
-    // 시간대별 슬롯 생성
+    // 시간대별 슬롯 생성 (KST 기준)
     const timeSlots: Date[] = [];
     let slotTime = new Date(startTime);
     for (let h = 0; h < totalActiveHours; h++) {
@@ -287,7 +310,7 @@ export class SeasonScheduler {
       slotIdx++;
     }
 
-    // DB 업데이트
+    // DB 업데이트 (KST 슬롯 시간을 그대로 저장 - DB에 KST로 통일)
     for (const { matchId, slotIndex } of assignments) {
       await pool.query(
         'UPDATE matches SET match_date = $1 WHERE id = $2',
@@ -310,13 +333,14 @@ export class SeasonScheduler {
     // 즉시 현재 시간대 경기 확인
     this.runHourlyMatches(seasonId, phase);
 
-    // 다음 정시까지 대기 후 매시간 반복
+    // 다음 정시까지 대기 후 매시간 반복 (실제 시스템 시간 기준으로 타이머 설정)
     const now = new Date();
     const nextHour = new Date(now);
     nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
     const msUntilNextHour = nextHour.getTime() - now.getTime();
 
-    console.log(`[시즌스케줄러] 다음 경기 체크: ${nextHour.toLocaleTimeString('ko-KR')} (${Math.round(msUntilNextHour / 1000)}초 후)`);
+    const kstNext = toKST(nextHour);
+    console.log(`[시즌스케줄러] 다음 경기 체크: KST ${kstNext.getHours().toString().padStart(2, '0')}:00:00 (${Math.round(msUntilNextHour / 1000)}초 후)`);
 
     this.phaseTimer = setTimeout(() => {
       // 첫 정시 실행
@@ -335,12 +359,13 @@ export class SeasonScheduler {
 
   async runHourlyMatches(seasonId: number, phase: string) {
     try {
-      const now = new Date();
-      const currentHourStart = new Date(now);
+      // KST 기준 현재 시간대 계산
+      const kstNow = nowKST();
+      const currentHourStart = new Date(kstNow);
       currentHourStart.setMinutes(0, 0, 0);
       const currentHourEnd = new Date(currentHourStart.getTime() + 60 * 60 * 1000);
 
-      console.log(`[시즌스케줄러] ${currentHourStart.toLocaleTimeString('ko-KR')} 경기 시작 체크`);
+      console.log(`[시즌스케줄러] KST ${currentHourStart.getHours().toString().padStart(2, '0')}:00:00 경기 시작 체크`);
 
       // 현재 시간대에 예정된 경기 조회
       const matches = await pool.query(
@@ -587,8 +612,11 @@ export class SeasonScheduler {
       [winnerIds[1], winnerIds[2]],
     ];
 
-    const baseDate = new Date();
+    const baseDate = nowKST();
     baseDate.setHours(baseDate.getHours() + 1, 0, 0, 0);
+    if (baseDate.getHours() < 9) {
+      baseDate.setHours(9, 0, 0, 0);
+    }
 
     for (let i = 0; i < matchups.length; i++) {
       const matchDate = new Date(baseDate.getTime() + i * 60 * 60 * 1000);
@@ -623,8 +651,11 @@ export class SeasonScheduler {
       return;
     }
 
-    const matchDate = new Date();
+    const matchDate = nowKST();
     matchDate.setHours(matchDate.getHours() + 1, 0, 0, 0);
+    if (matchDate.getHours() < 9) {
+      matchDate.setHours(9, 0, 0, 0);
+    }
 
     await pool.query(
       `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
@@ -645,9 +676,12 @@ export class SeasonScheduler {
       [tournamentId, stage]
     );
 
-    const now = new Date();
-    const startTime = new Date(now);
+    const kstNow = nowKST();
+    const startTime = new Date(kstNow);
     startTime.setHours(startTime.getHours() + 1, 0, 0, 0);
+    if (startTime.getHours() < 9) {
+      startTime.setHours(9, 0, 0, 0);
+    }
 
     for (let i = 0; i < matches.rows.length; i++) {
       const matchDate = new Date(startTime.getTime() + i * 60 * 60 * 1000);

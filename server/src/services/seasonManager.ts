@@ -25,26 +25,78 @@ export async function generateLeagueSchedule(seasonId: number, phase: string) {
       await pool.query('INSERT INTO tournament_teams (tournament_id, team_id) VALUES ($1, $2)', [tournamentId, tid]);
     }
 
-    // 2라운드 (홈1 어웨이1)
-    let matchDay = 1;
-    const baseDate = new Date();
+    // 2라운드 (홈1 어웨이1) - 홈/원정 랜덤 배정 + 팀별 홈/원정 균형
+    const allMatchups: { home: number; away: number; round: number }[] = [];
 
-    for (let round = 0; round < 2; round++) {
-      for (let i = 0; i < teamIds.length; i++) {
-        for (let j = i + 1; j < teamIds.length; j++) {
-          const homeTeam = round === 0 ? teamIds[i] : teamIds[j];
-          const awayTeam = round === 0 ? teamIds[j] : teamIds[i];
-          const matchDate = new Date(baseDate);
-          matchDate.setDate(matchDate.getDate() + matchDay);
+    // 팀별 홈 경기 수 추적
+    const homeCount: Map<number, number> = new Map();
+    for (const tid of teamIds) homeCount.set(tid, 0);
 
-          await pool.query(
-            `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, round, stage)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [tournamentId, seasonId, homeTeam, awayTeam, matchDate, round + 1, phase]
-          );
-          matchDay++;
+    // 모든 대진 쌍 생성 (각 쌍당 2경기: 홈/원정 1번씩)
+    const pairs: [number, number][] = [];
+    for (let i = 0; i < teamIds.length; i++) {
+      for (let j = i + 1; j < teamIds.length; j++) {
+        pairs.push([teamIds[i], teamIds[j]]);
+      }
+    }
+
+    // 대진 순서 셔플
+    for (let i = pairs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+    }
+
+    // 1라운드: 홈/원정 균형 맞추며 랜덤 배정
+    for (const [teamA, teamB] of pairs) {
+      const homeA = homeCount.get(teamA)!;
+      const homeB = homeCount.get(teamB)!;
+
+      let home: number, away: number;
+      if (homeA < homeB) {
+        home = teamA; away = teamB;
+      } else if (homeB < homeA) {
+        home = teamB; away = teamA;
+      } else {
+        // 동률이면 랜덤
+        if (Math.random() < 0.5) {
+          home = teamA; away = teamB;
+        } else {
+          home = teamB; away = teamA;
         }
       }
+
+      homeCount.set(home, homeCount.get(home)! + 1);
+      allMatchups.push({ home, away, round: 1 });
+    }
+
+    // 2라운드: 1라운드의 홈/원정 반전
+    for (const m of [...allMatchups]) {
+      allMatchups.push({ home: m.away, away: m.home, round: 2 });
+    }
+
+    // 경기 순서 라운드별로 셔플
+    const round1 = allMatchups.filter(m => m.round === 1);
+    const round2 = allMatchups.filter(m => m.round === 2);
+    for (const arr of [round1, round2]) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    }
+    const shuffled = [...round1, ...round2];
+
+    let matchDay = 1;
+    const baseDate = new Date();
+    for (const m of shuffled) {
+      const matchDate = new Date(baseDate);
+      matchDate.setDate(matchDate.getDate() + matchDay);
+
+      await pool.query(
+        `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, round, stage)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [tournamentId, seasonId, m.home, m.away, matchDate, m.round, phase]
+      );
+      matchDay++;
     }
   }
 }
@@ -83,28 +135,60 @@ export async function generateARCup(seasonId: number) {
     await pool.query('INSERT INTO tournament_teams (tournament_id, team_id) VALUES ($1, $2)', [tournamentId, tid]);
   }
 
-  // 10팀 풀리그 (홈1 어웨이1 = 총 18경기/팀)
+  // 10팀 풀리그 (홈1 어웨이1 = 총 18경기/팀) - 홈/원정 랜덤 균형 배정
   const baseDate = new Date();
-  let matchDay = 1;
+  const allMatchups: { home: number; away: number }[] = [];
 
+  // 팀별 홈 경기 수 추적
+  const homeCount: Map<number, number> = new Map();
+  for (const tid of qualifiedTeams) homeCount.set(tid, 0);
+
+  // 모든 대진 쌍 생성
+  const pairs: [number, number][] = [];
   for (let i = 0; i < qualifiedTeams.length; i++) {
     for (let j = i + 1; j < qualifiedTeams.length; j++) {
-      const d1 = new Date(baseDate); d1.setDate(d1.getDate() + matchDay);
-      await pool.query(
-        `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
-         VALUES ($1, $2, $3, $4, $5, 'AR상단배 풀리그')`,
-        [tournamentId, seasonId, qualifiedTeams[i], qualifiedTeams[j], d1]
-      );
-      matchDay++;
-
-      const d2 = new Date(baseDate); d2.setDate(d2.getDate() + matchDay);
-      await pool.query(
-        `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
-         VALUES ($1, $2, $3, $4, $5, 'AR상단배 풀리그')`,
-        [tournamentId, seasonId, qualifiedTeams[j], qualifiedTeams[i], d2]
-      );
-      matchDay++;
+      pairs.push([qualifiedTeams[i], qualifiedTeams[j]]);
     }
+  }
+
+  // 대진 순서 셔플
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+
+  // 1라운드: 홈/원정 균형
+  for (const [teamA, teamB] of pairs) {
+    const homeA = homeCount.get(teamA)!;
+    const homeB = homeCount.get(teamB)!;
+    let home: number, away: number;
+    if (homeA < homeB) { home = teamA; away = teamB; }
+    else if (homeB < homeA) { home = teamB; away = teamA; }
+    else { if (Math.random() < 0.5) { home = teamA; away = teamB; } else { home = teamB; away = teamA; } }
+    homeCount.set(home, homeCount.get(home)! + 1);
+    allMatchups.push({ home, away });
+  }
+
+  // 2라운드: 홈/원정 반전
+  const round2 = allMatchups.map(m => ({ home: m.away, away: m.home }));
+
+  // 각 라운드 셔플
+  for (let i = round2.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [round2[i], round2[j]] = [round2[j], round2[i]];
+  }
+
+  const allShuffled = [...allMatchups, ...round2];
+  let matchDay = 1;
+  for (const m of allShuffled) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + matchDay);
+    await pool.query(
+      `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
+       VALUES ($1, $2, $3, $4, $5, 'AR상단배 풀리그')`,
+      [tournamentId, seasonId, m.home, m.away, d]
+    );
+    matchDay++;
   }
 
   return tournamentId;
@@ -203,29 +287,56 @@ export async function generateNationalCup(seasonId: number) {
     }
   }
 
-  // 조별 리그전 일정 (조 내 홈1 어웨이1)
+  // 조별 리그전 일정 (조 내 홈1 어웨이1) - 홈/원정 랜덤 균형 배정
   const baseDate = new Date();
   let matchDay = 1;
 
   for (const [groupName, teamIds] of groupAssignments) {
+    const groupMatchups: { home: number; away: number }[] = [];
+    const homeCount: Map<number, number> = new Map();
+    for (const tid of teamIds) homeCount.set(tid, 0);
+
+    // 대진 쌍 생성 & 셔플
+    const pairs: [number, number][] = [];
     for (let i = 0; i < teamIds.length; i++) {
       for (let j = i + 1; j < teamIds.length; j++) {
-        const d1 = new Date(baseDate); d1.setDate(d1.getDate() + matchDay);
-        await pool.query(
-          `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [tournamentId, seasonId, teamIds[i], teamIds[j], d1, `${groupName}조`]
-        );
-        matchDay++;
-
-        const d2 = new Date(baseDate); d2.setDate(d2.getDate() + matchDay);
-        await pool.query(
-          `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [tournamentId, seasonId, teamIds[j], teamIds[i], d2, `${groupName}조`]
-        );
-        matchDay++;
+        pairs.push([teamIds[i], teamIds[j]]);
       }
+    }
+    for (let i = pairs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+    }
+
+    // 1라운드: 홈/원정 균형
+    for (const [teamA, teamB] of pairs) {
+      const homeA = homeCount.get(teamA)!;
+      const homeB = homeCount.get(teamB)!;
+      let home: number, away: number;
+      if (homeA < homeB) { home = teamA; away = teamB; }
+      else if (homeB < homeA) { home = teamB; away = teamA; }
+      else { if (Math.random() < 0.5) { home = teamA; away = teamB; } else { home = teamB; away = teamA; } }
+      homeCount.set(home, homeCount.get(home)! + 1);
+      groupMatchups.push({ home, away });
+    }
+
+    // 2라운드: 홈/원정 반전
+    const round2 = groupMatchups.map(m => ({ home: m.away, away: m.home }));
+    for (let i = round2.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [round2[i], round2[j]] = [round2[j], round2[i]];
+    }
+
+    const allGroupMatches = [...groupMatchups, ...round2];
+    for (const m of allGroupMatches) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() + matchDay);
+      await pool.query(
+        `INSERT INTO matches (tournament_id, season_id, home_team_id, away_team_id, match_date, stage)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [tournamentId, seasonId, m.home, m.away, d, `${groupName}조`]
+      );
+      matchDay++;
     }
   }
 

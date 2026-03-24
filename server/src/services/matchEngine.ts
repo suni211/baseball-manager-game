@@ -1079,15 +1079,15 @@ async function updateSeasonStats(seasonId: number, battingStats: any[], pitching
     // 타율/출루율/장타율/OPS 재계산
     await pool.query(
       `UPDATE season_batting_stats SET
-         batting_avg = CASE WHEN at_bats > 0 THEN ROUND(hits::numeric / at_bats, 3) ELSE 0 END,
-         obp = CASE WHEN (at_bats + walks) > 0 THEN ROUND((hits + walks)::numeric / (at_bats + walks), 3) ELSE 0 END,
+         batting_avg = CASE WHEN at_bats > 0 THEN ROUND((hits::numeric / at_bats)::numeric, 3) ELSE 0 END,
+         obp = CASE WHEN (at_bats + walks) > 0 THEN ROUND(((hits + walks)::numeric / (at_bats + walks))::numeric, 3) ELSE 0 END,
          slg = CASE WHEN at_bats > 0 THEN ROUND(
-           ((hits - doubles - triples - home_runs) + doubles * 2 + triples * 3 + home_runs * 4)::numeric / at_bats, 3
+           (((hits - doubles - triples - home_runs) + doubles * 2 + triples * 3 + home_runs * 4)::numeric / at_bats)::numeric, 3
          ) ELSE 0 END,
-         ops = CASE WHEN at_bats > 0 THEN ROUND(
+         ops = CASE WHEN at_bats > 0 THEN ROUND((
            (CASE WHEN (at_bats + walks) > 0 THEN (hits + walks)::numeric / (at_bats + walks) ELSE 0 END) +
-           (((hits - doubles - triples - home_runs) + doubles * 2 + triples * 3 + home_runs * 4)::numeric / at_bats), 3
-         ) ELSE 0 END
+           (((hits - doubles - triples - home_runs) + doubles * 2 + triples * 3 + home_runs * 4)::numeric / at_bats)
+         )::numeric, 3) ELSE 0 END
        WHERE player_id = $1 AND season_id = $2`,
       [bs.playerId, seasonId]
     );
@@ -1123,8 +1123,8 @@ async function updateSeasonStats(seasonId: number, battingStats: any[], pitching
     // ERA / WHIP 재계산
     await pool.query(
       `UPDATE season_pitching_stats SET
-         era = CASE WHEN innings_pitched > 0 THEN ROUND(earned_runs::numeric / innings_pitched * 9, 2) ELSE 0 END,
-         whip = CASE WHEN innings_pitched > 0 THEN ROUND((walks_allowed + hits_allowed)::numeric / innings_pitched, 2) ELSE 0 END
+         era = CASE WHEN innings_pitched > 0 THEN ROUND((earned_runs::numeric / innings_pitched * 9)::numeric, 2) ELSE 0 END,
+         whip = CASE WHEN innings_pitched > 0 THEN ROUND(((walks_allowed + hits_allowed)::numeric / innings_pitched)::numeric, 2) ELSE 0 END
        WHERE player_id = $1 AND season_id = $2`,
       [ps.playerId, seasonId]
     );

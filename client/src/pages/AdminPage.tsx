@@ -60,6 +60,19 @@ export default function AdminPage() {
         <div className="grid-2">
           <div className="card">
             <h3 className="font-bold mb-2">시즌 관리</h3>
+
+            <div style={{ marginBottom: 16, padding: 12, background: '#7f1d1d', borderRadius: 8, border: '1px solid #991b1b' }}>
+              <p className="font-bold mb-2" style={{ color: '#fca5a5' }}>시즌 완전 초기화</p>
+              <p className="text-sm text-muted mb-3">모든 시즌/경기/대회 데이터를 삭제하고 새 시즌을 자동 시작합니다.</p>
+              <button className="danger" onClick={() => {
+                if (window.confirm('정말 시즌을 초기화하시겠습니까? 모든 경기 기록이 삭제됩니다.')) {
+                  action(() => api.post('/admin/season/reset'));
+                }
+              }} disabled={loading}>
+                시즌 초기화 (주의!)
+              </button>
+            </div>
+
             <div className="flex gap-2 mb-4">
               <input type="number" value={newYear} onChange={e => setNewYear(parseInt(e.target.value))} style={{ width: 100 }} />
               <button className="primary" onClick={() => action(() => api.post('/admin/season/create', { year: newYear }))} disabled={loading}>

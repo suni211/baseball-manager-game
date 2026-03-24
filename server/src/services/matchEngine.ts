@@ -1198,6 +1198,62 @@ async function loadTeamLineup(teamId: number, teamName: string, morale: number, 
     [teamId]
   );
 
+  // 타순이 안 잡혀있으면 자동 배정 (CPU 팀 등)
+  if (battersResult.rows.length < 9) {
+    // 선발로스터 야수 중 타순 없는 선수를 자동 배정
+    const unassigned = await pool.query(
+      `SELECT p.id FROM players p
+       WHERE p.team_id = $1 AND p.roster_status = '선발로스터' AND p.is_pitcher = FALSE AND p.is_injured = FALSE
+         AND p.batting_order IS NULL
+       ORDER BY (p.contact + p.power + p.speed) DESC
+       LIMIT $2`,
+      [teamId, 9 - battersResult.rows.length]
+    );
+
+    const positions = ['포수','1루수','2루수','3루수','유격수','좌익수','중견수','우익수','지명타자'];
+    const usedPositions = new Set(battersResult.rows.map((r: any) => r.lineup_position || r.position));
+    let orderNum = battersResult.rows.length + 1;
+
+    for (const row of unassigned.rows) {
+      const pos = positions.find(p => !usedPositions.has(p)) || '지명타자';
+      usedPositions.add(pos);
+      await pool.query(
+        'UPDATE players SET batting_order = $1, lineup_position = $2 WHERE id = $3',
+        [orderNum, pos, row.id]
+      );
+      orderNum++;
+    }
+
+    // 다시 로드
+    const reloaded = await pool.query(
+      `SELECT p.*, COALESCE(
+         (SELECT json_agg(json_build_object('skill_name', ps.skill_name, 'skill_type', ps.skill_type, 'effect_stat', ps.effect_stat, 'effect_value', ps.effect_value))
+          FROM player_skills ps WHERE ps.player_id = p.id AND ps.is_active = TRUE), '[]'
+       ) as skills
+       FROM players p
+       WHERE p.team_id = $1 AND p.roster_status = '선발로스터' AND p.is_pitcher = FALSE AND p.batting_order IS NOT NULL AND p.is_injured = FALSE
+       ORDER BY p.batting_order`,
+      [teamId]
+    );
+    battersResult.rows = reloaded.rows;
+  }
+
+  // 투수가 없으면 자동 배정
+  if (pitchersResult.rows.length === 0) {
+    const autoPitchers = await pool.query(
+      `SELECT p.*, COALESCE(
+         (SELECT json_agg(json_build_object('skill_name', ps.skill_name, 'skill_type', ps.skill_type, 'effect_stat', ps.effect_stat, 'effect_value', ps.effect_value))
+          FROM player_skills ps WHERE ps.player_id = p.id AND ps.is_active = TRUE), '[]'
+       ) as skills
+       FROM players p
+       WHERE p.team_id = $1 AND p.is_pitcher = TRUE AND p.is_injured = FALSE
+       ORDER BY CASE p.pitcher_role WHEN '선발' THEN 1 WHEN '중계' THEN 2 WHEN '마무리' THEN 3 ELSE 4 END
+       LIMIT 5`,
+      [teamId]
+    );
+    pitchersResult.rows = autoPitchers.rows;
+  }
+
   // 홈 어드밴티지
   const homeBonus = isHome ? 1.02 : 1.0;
 

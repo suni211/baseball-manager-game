@@ -180,6 +180,44 @@ async function updateTournamentStandings() {
   }
 }
 
+// 시즌 & 스케줄 완전 초기화 (깨진 시즌 리셋)
+router.post('/season/reset', async (req: AuthRequest, res: Response) => {
+  try {
+    // 경기 관련 데이터 삭제
+    await pool.query('DELETE FROM match_play_log');
+    await pool.query('DELETE FROM match_batting_stats');
+    await pool.query('DELETE FROM match_pitching_stats');
+    await pool.query('DELETE FROM match_innings');
+    await pool.query('DELETE FROM pitcher_pitch_counts');
+    await pool.query('DELETE FROM tournament_teams');
+    await pool.query('DELETE FROM matches');
+    await pool.query('DELETE FROM tournaments');
+    await pool.query('DELETE FROM seasons');
+
+    // 시즌 타격/투수 스탯 리셋
+    await pool.query('DELETE FROM season_batting_stats');
+    await pool.query('DELETE FROM season_pitching_stats');
+
+    // 팀 사기/화학 리셋
+    await pool.query('UPDATE teams SET morale = 50, chemistry = 50');
+
+    // 선수 피로도/컨디션 리셋
+    await pool.query('UPDATE players SET fatigue = 0, condition = 70');
+
+    // 시즌 스케줄러 재시작 (app에 저장된 인스턴스 사용)
+    const seasonScheduler = req.app.get('seasonScheduler');
+    if (seasonScheduler) {
+      seasonScheduler.stop();
+      await seasonScheduler.start();
+    }
+
+    res.json({ message: '시즌 완전 초기화 완료. 새 시즌이 자동 시작됩니다.' });
+  } catch (error) {
+    console.error('시즌 리셋 오류:', error);
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
 // 선수 직접 수정 (어드민)
 router.put('/player/:id', async (req: AuthRequest, res: Response) => {
   try {

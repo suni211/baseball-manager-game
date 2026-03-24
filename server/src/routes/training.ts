@@ -47,7 +47,7 @@ router.post('/train', authMiddleware, async (req: AuthRequest, res: Response) =>
     // 하루 1회 훈련 제한 체크
     const todayTraining = await pool.query(
       `SELECT COUNT(*) as cnt FROM training_logs
-       WHERE player_id = $1 AND created_at >= CURRENT_DATE`,
+       WHERE player_id = $1 AND trained_at >= CURRENT_DATE`,
       [playerId]
     );
     if (parseInt(todayTraining.rows[0].cnt) > 0) {

@@ -1,0 +1,28 @@
+# fly.toml app configuration file generated for baseball-manager-game on 2026-03-23T23:11:15+09:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'baseball-manager-game'
+primary_region = 'nrt'
+
+[build]
+
+[env]
+  JWT_SECRET = 'baseball-game-secret-key-change-this'
+  NODE_ENV = 'production'
+  PORT = '8080'
+  DATABASE_URL = 'postgresql://postgres:NrU%26%3F2%2ARD%2AWtAt%25@db.mrgpvyixegynjbvczoas.supabase.co:5432/postgres'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 
@@ -16,8 +16,25 @@ export default function StandingsPage({ user }: Props) {
   const [standings, setStandings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const tabRef = useRef(selectedTab);
+  const leagueRef = useRef(selectedLeague);
+  const tournamentRef = useRef(selectedTournament);
+  tabRef.current = selectedTab;
+  leagueRef.current = selectedLeague;
+  tournamentRef.current = selectedTournament;
+
   useEffect(() => {
     loadInitialData();
+
+    // 30초마다 자동 갱신
+    const interval = setInterval(() => {
+      if (tabRef.current === 'leagues' && leagueRef.current) {
+        loadLeagueTeams(leagueRef.current);
+      } else if (tabRef.current === 'tournaments' && tournamentRef.current) {
+        loadTournamentStandings(tournamentRef.current);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadInitialData = async () => {

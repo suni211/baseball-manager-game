@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 
@@ -12,6 +12,11 @@ export default function LeagueStatsPage() {
   const [battingSort, setBattingSort] = useState<BattingSort>('batting_avg');
   const [pitchingSort, setPitchingSort] = useState<PitchingSort>('era');
   const [loading, setLoading] = useState(true);
+
+  const battingSortRef = useRef(battingSort);
+  const pitchingSortRef = useRef(pitchingSort);
+  battingSortRef.current = battingSort;
+  pitchingSortRef.current = pitchingSort;
 
   const loadBatting = async (sort: BattingSort) => {
     try {
@@ -29,6 +34,13 @@ export default function LeagueStatsPage() {
 
   useEffect(() => {
     Promise.all([loadBatting(battingSort), loadPitching(pitchingSort)]).finally(() => setLoading(false));
+
+    // 30초마다 자동 갱신
+    const interval = setInterval(() => {
+      loadBatting(battingSortRef.current);
+      loadPitching(pitchingSortRef.current);
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => { loadBatting(battingSort); }, [battingSort]);

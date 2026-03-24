@@ -9,6 +9,10 @@ export default function AdminPage() {
   const [tab, setTab] = useState<string>('시즌');
   const [newYear, setNewYear] = useState(2025);
   const [simDate, setSimDate] = useState('');
+  const [allTeams, setAllTeams] = useState<any[]>([]);
+  const [homeTeamId, setHomeTeamId] = useState<number | ''>('');
+  const [awayTeamId, setAwayTeamId] = useState<number | ''>('');
+  const [friendlyResult, setFriendlyResult] = useState<any>(null);
 
   useEffect(() => {
     loadData();
@@ -16,10 +20,12 @@ export default function AdminPage() {
 
   const loadData = async () => {
     try {
-      const [usersRes] = await Promise.all([
-        api.get('/admin/users')
+      const [usersRes, teamsRes] = await Promise.all([
+        api.get('/admin/users'),
+        api.get('/admin/teams-list')
       ]);
       setUsers(usersRes.data);
+      setAllTeams(teamsRes.data);
     } catch (err) {
       console.error(err);
     }
@@ -43,7 +49,7 @@ export default function AdminPage() {
       <h1 className="text-xl font-bold mb-4">관리자 패널</h1>
 
       <div className="flex gap-2 mb-4">
-        {['시즌', '유저', '경기'].map(t => (
+        {['시즌', '유저', '경기', '연습경기'].map(t => (
           <button key={t} className={tab === t ? 'primary' : 'secondary'} onClick={() => setTab(t)}>
             {t} 관리
           </button>
@@ -197,6 +203,114 @@ export default function AdminPage() {
             }} disabled={loading}>
               시뮬레이션 실행
             </button>
+          </div>
+        </div>
+      )}
+
+      {tab === '연습경기' && (
+        <div className="grid-2">
+          <div className="card">
+            <h3 className="font-bold mb-4">연습경기 설정</h3>
+            <p className="text-sm text-muted mb-4">두 팀을 선택하여 연습경기를 진행합니다. 시즌 기록에 영향을 주지 않습니다.</p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label className="font-bold text-sm" style={{ display: 'block', marginBottom: 6 }}>홈 팀</label>
+              <select
+                value={homeTeamId}
+                onChange={e => setHomeTeamId(e.target.value ? parseInt(e.target.value) : '')}
+                style={{ width: '100%', padding: '8px 12px' }}
+              >
+                <option value="">팀 선택...</option>
+                {allTeams.map(t => (
+                  <option key={t.id} value={t.id} disabled={t.id === awayTeamId}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ textAlign: 'center', margin: '8px 0', fontSize: 20, fontWeight: 800, color: 'var(--text-muted)' }}>VS</div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label className="font-bold text-sm" style={{ display: 'block', marginBottom: 6 }}>원정 팀</label>
+              <select
+                value={awayTeamId}
+                onChange={e => setAwayTeamId(e.target.value ? parseInt(e.target.value) : '')}
+                style={{ width: '100%', padding: '8px 12px' }}
+              >
+                <option value="">팀 선택...</option>
+                {allTeams.map(t => (
+                  <option key={t.id} value={t.id} disabled={t.id === homeTeamId}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              className="primary"
+              style={{ width: '100%', padding: '12px', fontSize: 16 }}
+              onClick={async () => {
+                if (!homeTeamId || !awayTeamId) return;
+                setLoading(true);
+                setMessage('');
+                setFriendlyResult(null);
+                try {
+                  const { data } = await api.post('/admin/friendly-match', { homeTeamId, awayTeamId });
+                  setMessage(data.message);
+                  setFriendlyResult(data);
+                } catch (err: any) {
+                  setMessage('에러: ' + (err.response?.data?.error || err.message));
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading || !homeTeamId || !awayTeamId}
+            >
+              {loading ? '시뮬레이션 중...' : '연습경기 시작'}
+            </button>
+          </div>
+
+          <div className="card">
+            <h3 className="font-bold mb-4">경기 결과</h3>
+            {friendlyResult ? (
+              <div>
+                <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 24 }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <p className="text-sm text-muted">홈</p>
+                      <p className="font-bold" style={{ fontSize: 18 }}>
+                        {allTeams.find(t => t.id === homeTeamId)?.name}
+                      </p>
+                    </div>
+                    <div style={{ fontSize: 36, fontWeight: 900, letterSpacing: 4 }}>
+                      <span className={friendlyResult.homeScore > friendlyResult.awayScore ? 'text-green' : friendlyResult.homeScore < friendlyResult.awayScore ? 'text-red' : ''}>
+                        {friendlyResult.homeScore}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)', margin: '0 8px' }}>-</span>
+                      <span className={friendlyResult.awayScore > friendlyResult.homeScore ? 'text-green' : friendlyResult.awayScore < friendlyResult.homeScore ? 'text-red' : ''}>
+                        {friendlyResult.awayScore}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <p className="text-sm text-muted">원정</p>
+                      <p className="font-bold" style={{ fontSize: 18 }}>
+                        {allTeams.find(t => t.id === awayTeamId)?.name}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center', marginTop: 16 }}>
+                  <a href={`/match/${friendlyResult.matchId}`} className="text-blue text-sm" style={{ textDecoration: 'underline' }}>
+                    경기 상세 보기
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p>팀을 선택하고 연습경기를 시작하세요</p>
+              </div>
+            )}
           </div>
         </div>
       )}

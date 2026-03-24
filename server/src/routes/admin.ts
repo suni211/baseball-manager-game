@@ -275,6 +275,53 @@ router.get('/users', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// 연습경기 생성 및 즉시 시뮬레이션
+router.post('/friendly-match', async (req: AuthRequest, res: Response) => {
+  try {
+    const { homeTeamId, awayTeamId } = req.body;
+    if (!homeTeamId || !awayTeamId) return res.status(400).json({ error: '홈/원정 팀을 선택하세요' });
+    if (homeTeamId === awayTeamId) return res.status(400).json({ error: '같은 팀끼리는 불가' });
+
+    // 현재 활성 시즌 가져오기
+    const season = await pool.query('SELECT id FROM seasons WHERE is_active = TRUE ORDER BY id DESC LIMIT 1');
+    const seasonId = season.rows.length > 0 ? season.rows[0].id : null;
+
+    // 연습경기 생성 (tournament_id 없이)
+    const match = await pool.query(
+      `INSERT INTO matches (season_id, home_team_id, away_team_id, match_date, status, round, phase)
+       VALUES ($1, $2, $3, NOW(), '진행중', '연습경기', '연습경기') RETURNING id`,
+      [seasonId, homeTeamId, awayTeamId]
+    );
+    const matchId = match.rows[0].id;
+
+    // 즉시 시뮬레이션
+    const result = await simulateMatch(matchId);
+
+    const homeTeam = await pool.query('SELECT name FROM teams WHERE id = $1', [homeTeamId]);
+    const awayTeam = await pool.query('SELECT name FROM teams WHERE id = $1', [awayTeamId]);
+
+    res.json({
+      message: `연습경기 완료! ${homeTeam.rows[0].name} ${result.homeScore} - ${result.awayScore} ${awayTeam.rows[0].name}`,
+      matchId,
+      homeScore: result.homeScore,
+      awayScore: result.awayScore
+    });
+  } catch (error) {
+    console.error('연습경기 에러:', error);
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
+// 전체 팀 목록 (연습경기 팀 선택용)
+router.get('/teams-list', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query('SELECT id, name, league_id FROM teams ORDER BY league_id, name');
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
 // 뉴스 조회
 router.get('/news', async (req, res) => {
   try {

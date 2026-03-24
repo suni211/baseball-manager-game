@@ -183,20 +183,8 @@ async function updateTournamentStandings() {
 // 시즌 & 스케줄 완전 초기화 (깨진 시즌 리셋)
 router.post('/season/reset', async (req: AuthRequest, res: Response) => {
   try {
-    // 경기 관련 데이터 삭제
-    await pool.query('DELETE FROM match_play_log');
-    await pool.query('DELETE FROM match_batting_stats');
-    await pool.query('DELETE FROM match_pitching_stats');
-    await pool.query('DELETE FROM match_innings');
-    await pool.query('DELETE FROM pitcher_pitch_counts');
-    await pool.query('DELETE FROM tournament_teams');
-    await pool.query('DELETE FROM matches');
-    await pool.query('DELETE FROM tournaments');
-    await pool.query('DELETE FROM seasons');
-
-    // 시즌 타격/투수 스탯 리셋
-    await pool.query('DELETE FROM season_batting_stats');
-    await pool.query('DELETE FROM season_pitching_stats');
+    // 경기 관련 데이터 삭제 (CASCADE로 FK 제약 무시)
+    await pool.query('TRUNCATE match_play_log, match_batting_stats, match_pitching_stats, match_innings, pitcher_pitch_counts, tournament_teams, matches, tournaments, seasons, season_batting_stats, season_pitching_stats CASCADE');
 
     // 팀 사기/화학 리셋
     await pool.query('UPDATE teams SET morale = 50, chemistry = 50');

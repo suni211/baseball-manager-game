@@ -9,12 +9,37 @@ export default function TacticsPage({ user }: Props) {
   const [tactics, setTactics] = useState<any>(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pitchers, setPitchers] = useState<any[]>([]);
+  const [pitcherSaving, setPitcherSaving] = useState(false);
 
-  useEffect(() => { loadTactics(); }, []);
+  useEffect(() => { loadTactics(); loadPitchers(); }, []);
 
   const loadTactics = async () => {
     const { data } = await api.get('/tactics');
     setTactics(data);
+  };
+
+  const loadPitchers = async () => {
+    if (!user.teamId) return;
+    const { data } = await api.get(`/players/team/${user.teamId}`);
+    const teamPitchers = data.filter((p: any) => p.is_pitcher && p.roster_status === '선발로스터' && !p.is_injured);
+    setPitchers(teamPitchers);
+  };
+
+  const setPitcherRole = (playerId: number, role: string) => {
+    setPitchers(prev => prev.map(p => p.id === playerId ? { ...p, pitcher_role: role } : p));
+  };
+
+  const savePitcherRotation = async () => {
+    setPitcherSaving(true);
+    try {
+      const rotation = pitchers.map(p => ({ playerId: p.id, pitcher_role: p.pitcher_role || '중계' }));
+      await api.post('/players/pitching-rotation', { rotation });
+      setMessage('투수 로테이션 저장 완료!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err: any) {
+      setMessage(err.response?.data?.error || '저장 실패');
+    } finally { setPitcherSaving(false); }
   };
 
   const save = async () => {
@@ -88,6 +113,76 @@ export default function TacticsPage({ user }: Props) {
             <p className="text-sm text-muted mt-2">수비 시프트를 사용합니다 (풀 히터 대응)</p>
           </div>
         </div>
+      </div>
+
+      {/* 투수 로테이션 설정 */}
+      <div className="card mt-4">
+        <div className="flex-between mb-4">
+          <h3 className="font-bold">투수 로테이션 설정</h3>
+          <button className="primary" onClick={savePitcherRotation} disabled={pitcherSaving}>
+            {pitcherSaving ? '저장중...' : '로테이션 저장'}
+          </button>
+        </div>
+
+        {pitchers.length === 0 ? (
+          <div className="empty-state"><p>선발 로스터에 등록된 투수가 없습니다</p></div>
+        ) : (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <p className="text-sm text-muted mb-2">각 투수의 역할을 선발/중계/마무리로 설정하세요. 선발 최소 1명, 마무리 최대 1명.</p>
+              <div className="flex gap-3 text-sm">
+                <span className="badge blue">선발 {pitchers.filter(p => p.pitcher_role === '선발').length}명</span>
+                <span className="badge silver">중계 {pitchers.filter(p => p.pitcher_role === '중계').length}명</span>
+                <span className="badge" style={{ background: '#7c2d12' }}>마무리 {pitchers.filter(p => p.pitcher_role === '마무리').length}명</span>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>학년</th>
+                  <th style={{ textAlign: 'center' }}>구속</th>
+                  <th style={{ textAlign: 'center' }}>제구</th>
+                  <th style={{ textAlign: 'center' }}>체력</th>
+                  <th style={{ textAlign: 'center' }}>변화구</th>
+                  <th style={{ textAlign: 'center' }}>멘탈</th>
+                  <th style={{ textAlign: 'center' }}>컨디션</th>
+                  <th>역할</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pitchers.sort((a, b) => {
+                  const roleOrder: Record<string, number> = { '선발': 0, '중계': 1, '마무리': 2 };
+                  return (roleOrder[a.pitcher_role] ?? 1) - (roleOrder[b.pitcher_role] ?? 1);
+                }).map(p => (
+                  <tr key={p.id}>
+                    <td className="font-bold">{p.name}</td>
+                    <td className="text-sm text-muted">{p.grade}학년</td>
+                    <td style={{ textAlign: 'center', color: p.velocity >= 70 ? 'var(--green-light)' : p.velocity >= 50 ? 'var(--yellow-light)' : 'var(--red-light)' }}>{p.velocity}</td>
+                    <td style={{ textAlign: 'center', color: p.control_stat >= 70 ? 'var(--green-light)' : p.control_stat >= 50 ? 'var(--yellow-light)' : 'var(--red-light)' }}>{p.control_stat}</td>
+                    <td style={{ textAlign: 'center', color: p.stamina >= 70 ? 'var(--green-light)' : p.stamina >= 50 ? 'var(--yellow-light)' : 'var(--red-light)' }}>{p.stamina}</td>
+                    <td style={{ textAlign: 'center', color: p.breaking_ball >= 70 ? 'var(--green-light)' : p.breaking_ball >= 50 ? 'var(--yellow-light)' : 'var(--red-light)' }}>{p.breaking_ball}</td>
+                    <td style={{ textAlign: 'center', color: p.mental >= 70 ? 'var(--green-light)' : p.mental >= 50 ? 'var(--yellow-light)' : 'var(--red-light)' }}>{p.mental}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span className={p.condition >= 70 ? 'stat-val-high' : p.condition >= 45 ? 'stat-val-mid' : 'stat-val-low'}>{p.condition}</span>
+                    </td>
+                    <td>
+                      <select
+                        value={p.pitcher_role || '중계'}
+                        onChange={e => setPitcherRole(p.id, e.target.value)}
+                        style={{ width: 80, padding: '4px 8px', fontSize: 12 }}
+                      >
+                        <option value="선발">선발</option>
+                        <option value="중계">중계</option>
+                        <option value="마무리">마무리</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card mt-4">

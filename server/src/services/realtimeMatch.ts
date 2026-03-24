@@ -132,7 +132,7 @@ export class RealtimeMatchService {
 
     // 해당 팀의 유저인지 검증
     const teamId = team === 'home' ? state.homeTeamId : state.awayTeamId;
-    const userCheck = await pool.query('SELECT id FROM teams WHERE id = $1 AND user_id = $2', [teamId, userId]);
+    const userCheck = await pool.query('SELECT id FROM teams WHERE id = $1 AND owner_id = $2', [teamId, userId]);
     if (userCheck.rows.length === 0) {
       this.io.to(`match-${matchId}`).emit('timeoutDenied', { reason: '해당 팀의 감독이 아닙니다.' });
       return;

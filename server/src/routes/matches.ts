@@ -35,6 +35,51 @@ router.get('/schedule', async (req, res) => {
   }
 });
 
+// 대회 목록 (/:id 보다 위에 있어야 함)
+router.get('/tournaments/list', async (req, res) => {
+  try {
+    const { seasonId } = req.query;
+    let query = 'SELECT * FROM tournaments';
+    const params: any[] = [];
+    if (seasonId) {
+      params.push(seasonId);
+      query += ' WHERE season_id = $1';
+    }
+    query += ' ORDER BY started_at DESC';
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
+// 대회 순위표 (/:id 보다 위에 있어야 함)
+router.get('/tournament/:tournamentId/standings', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT tt.*, t.name as team_name, l.name as league_name,
+              CASE WHEN (tt.wins + tt.losses) > 0
+                THEN ROUND(tt.wins::numeric / (tt.wins + tt.losses), 3)
+                ELSE 0 END as win_rate
+       FROM tournament_teams tt
+       JOIN teams t ON tt.team_id = t.id
+       LEFT JOIN leagues l ON t.league_id = l.id
+       WHERE tt.tournament_id = $1
+       ORDER BY win_rate DESC, tt.wins DESC, (tt.runs_scored - tt.runs_allowed) DESC`,
+      [req.params.tournamentId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
+// 라이브 경기 현황
+router.get('/live', (_req, res) => {
+  res.json({ liveMatchCount: 0 });
+});
+
 // 경기 상세 결과
 router.get('/:id', async (req, res) => {
   try {
@@ -116,46 +161,6 @@ router.post('/:id/simulate', authMiddleware, adminMiddleware, async (req: AuthRe
     });
   } catch (error) {
     console.error('시뮬레이션 에러:', error);
-    res.status(500).json({ error: '서버 에러' });
-  }
-});
-
-// 대회 순위표
-router.get('/tournament/:tournamentId/standings', async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT tt.*, t.name as team_name, l.name as league_name,
-              CASE WHEN (tt.wins + tt.losses) > 0
-                THEN ROUND(tt.wins::numeric / (tt.wins + tt.losses), 3)
-                ELSE 0 END as win_rate
-       FROM tournament_teams tt
-       JOIN teams t ON tt.team_id = t.id
-       LEFT JOIN leagues l ON t.league_id = l.id
-       WHERE tt.tournament_id = $1
-       ORDER BY win_rate DESC, tt.wins DESC, (tt.runs_scored - tt.runs_allowed) DESC`,
-      [req.params.tournamentId]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: '서버 에러' });
-  }
-});
-
-// 대회 목록
-router.get('/tournaments/list', async (req, res) => {
-  try {
-    const { seasonId } = req.query;
-    let query = 'SELECT * FROM tournaments';
-    const params: any[] = [];
-    if (seasonId) {
-      params.push(seasonId);
-      query += ' WHERE season_id = $1';
-    }
-    query += ' ORDER BY started_at DESC';
-
-    const result = await pool.query(query, params);
-    res.json(result.rows);
-  } catch (error) {
     res.status(500).json({ error: '서버 에러' });
   }
 });

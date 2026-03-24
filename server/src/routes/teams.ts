@@ -22,14 +22,23 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 리그별 팀 조회
+// 리그별 팀 조회 (현재 시즌 승/패 포함)
 router.get('/league/:leagueId', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT t.*, u.username as owner_name
+      `SELECT t.*, u.username as owner_name,
+              COALESCE(SUM(tt.wins), 0) as wins,
+              COALESCE(SUM(tt.losses), 0) as losses,
+              COALESCE(SUM(tt.draws), 0) as draws,
+              COALESCE(SUM(tt.runs_scored), 0) as runs_scored,
+              COALESCE(SUM(tt.runs_allowed), 0) as runs_allowed
        FROM teams t
        LEFT JOIN users u ON t.owner_id = u.id
+       LEFT JOIN tournament_teams tt ON t.id = tt.team_id
+       LEFT JOIN tournaments tn ON tt.tournament_id = tn.id
+         AND tn.season_id = (SELECT id FROM seasons WHERE is_active = TRUE ORDER BY id DESC LIMIT 1)
        WHERE t.league_id = $1
+       GROUP BY t.id, u.username
        ORDER BY t.name`,
       [req.params.leagueId]
     );

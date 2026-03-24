@@ -914,6 +914,45 @@ export async function simulateMatch(matchId: number): Promise<MatchResult> {
     }
   }
 
+  // ---- 대회 순위(tournament_teams) 업데이트 ----
+  if (m.tournament_id) {
+    if (homeScore > awayScore) {
+      await pool.query(
+        `UPDATE tournament_teams SET wins = wins + 1, runs_scored = runs_scored + $1, runs_allowed = runs_allowed + $2
+         WHERE tournament_id = $3 AND team_id = $4`,
+        [homeScore, awayScore, m.tournament_id, m.home_team_id]
+      );
+      await pool.query(
+        `UPDATE tournament_teams SET losses = losses + 1, runs_scored = runs_scored + $1, runs_allowed = runs_allowed + $2
+         WHERE tournament_id = $3 AND team_id = $4`,
+        [awayScore, homeScore, m.tournament_id, m.away_team_id]
+      );
+    } else if (awayScore > homeScore) {
+      await pool.query(
+        `UPDATE tournament_teams SET wins = wins + 1, runs_scored = runs_scored + $1, runs_allowed = runs_allowed + $2
+         WHERE tournament_id = $3 AND team_id = $4`,
+        [awayScore, homeScore, m.tournament_id, m.away_team_id]
+      );
+      await pool.query(
+        `UPDATE tournament_teams SET losses = losses + 1, runs_scored = runs_scored + $1, runs_allowed = runs_allowed + $2
+         WHERE tournament_id = $3 AND team_id = $4`,
+        [homeScore, awayScore, m.tournament_id, m.home_team_id]
+      );
+    } else {
+      // 무승부
+      await pool.query(
+        `UPDATE tournament_teams SET draws = draws + 1, runs_scored = runs_scored + $1, runs_allowed = runs_allowed + $2
+         WHERE tournament_id = $3 AND team_id = $4`,
+        [homeScore, awayScore, m.tournament_id, m.home_team_id]
+      );
+      await pool.query(
+        `UPDATE tournament_teams SET draws = draws + 1, runs_scored = runs_scored + $1, runs_allowed = runs_allowed + $2
+         WHERE tournament_id = $3 AND team_id = $4`,
+        [awayScore, homeScore, m.tournament_id, m.away_team_id]
+      );
+    }
+  }
+
   // ---- 팀 사기/인기도 업데이트 ----
   await updateTeamMorale(m.home_team_id, m.away_team_id, homeScore, awayScore, attendance);
 

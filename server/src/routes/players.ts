@@ -120,6 +120,46 @@ router.post('/lineup', authMiddleware, async (req: AuthRequest, res: Response) =
   }
 });
 
+// 투수 역할 설정 (선발/중계/마무리)
+router.post('/pitching-rotation', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const { rotation } = req.body; // [{ playerId, pitcher_role }]
+    const teamId = req.user!.teamId;
+    if (!teamId) return res.status(400).json({ error: '팀 먼저 선택' });
+    if (!Array.isArray(rotation)) return res.status(400).json({ error: '투수 로테이션 배열 필요' });
+
+    // 모든 투수가 이 팀 소속인지 확인
+    const playerIds = rotation.map((r: any) => r.playerId);
+    const check = await pool.query(
+      'SELECT COUNT(*) FROM players WHERE id = ANY($1) AND team_id = $2 AND is_pitcher = TRUE',
+      [playerIds, teamId]
+    );
+    if (parseInt(check.rows[0].count) !== playerIds.length) {
+      return res.status(400).json({ error: '팀 소속 투수가 아닌 선수가 포함되어 있습니다' });
+    }
+
+    // 역할별 수 검증
+    const starters = rotation.filter((r: any) => r.pitcher_role === '선발');
+    const relievers = rotation.filter((r: any) => r.pitcher_role === '중계');
+    const closers = rotation.filter((r: any) => r.pitcher_role === '마무리');
+
+    if (starters.length < 1) return res.status(400).json({ error: '선발 투수 최소 1명 필요' });
+    if (closers.length > 1) return res.status(400).json({ error: '마무리 투수는 최대 1명' });
+
+    // DB 업데이트
+    for (const entry of rotation) {
+      await pool.query(
+        'UPDATE players SET pitcher_role = $1 WHERE id = $2 AND team_id = $3',
+        [entry.pitcher_role, entry.playerId, teamId]
+      );
+    }
+
+    res.json({ message: '투수 로테이션 설정 완료' });
+  } catch (error) {
+    res.status(500).json({ error: '서버 에러' });
+  }
+});
+
 // 선수 방출
 router.post('/release/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {

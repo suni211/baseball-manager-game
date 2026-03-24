@@ -107,11 +107,18 @@ export class SeasonScheduler {
     }
 
     // 해당 페이즈의 미완료 경기가 있는지 확인
-    const pendingMatches = await pool.query(
-      `SELECT COUNT(*) as cnt FROM matches
-       WHERE season_id = $1 AND stage LIKE $2 AND status = '예정'`,
-      [seasonId, `%${this.getStagePattern(currentPhase)}%`]
-    );
+    const pendingMatches = currentPhase === '마전국기'
+      ? await pool.query(
+          `SELECT COUNT(*) as cnt FROM matches m
+           JOIN tournaments t ON m.tournament_id = t.id
+           WHERE m.season_id = $1 AND t.type = '마전국기' AND m.status = '예정'`,
+          [seasonId]
+        )
+      : await pool.query(
+          `SELECT COUNT(*) as cnt FROM matches
+           WHERE season_id = $1 AND stage LIKE $2 AND status = '예정'`,
+          [seasonId, `%${this.getStagePattern(currentPhase)}%`]
+        );
 
     const pendingCount = parseInt(pendingMatches.rows[0].cnt);
 
@@ -175,12 +182,19 @@ export class SeasonScheduler {
     // 생성된 경기를 2일에 걸쳐 분배
     await this.distributeMatchesAcrossTime(seasonId, phase);
 
-    const matchCount = await pool.query(
-      `SELECT COUNT(*) as cnt FROM matches
-       WHERE season_id = $1 AND status = '예정'
-       AND stage LIKE $2`,
-      [seasonId, `%${this.getStagePattern(phase)}%`]
-    );
+    const matchCount = phase === '마전국기'
+      ? await pool.query(
+          `SELECT COUNT(*) as cnt FROM matches m
+           JOIN tournaments t ON m.tournament_id = t.id
+           WHERE m.season_id = $1 AND t.type = '마전국기' AND m.status = '예정'`,
+          [seasonId]
+        )
+      : await pool.query(
+          `SELECT COUNT(*) as cnt FROM matches
+           WHERE season_id = $1 AND status = '예정'
+           AND stage LIKE $2`,
+          [seasonId, `%${this.getStagePattern(phase)}%`]
+        );
     console.log(`[시즌스케줄러] ${phase} 총 ${matchCount.rows[0].cnt}경기 일정 생성 완료`);
   }
 
@@ -189,16 +203,22 @@ export class SeasonScheduler {
   // =============================================
 
   private async distributeMatchesAcrossTime(seasonId: number, phase: string) {
-    const stagePattern = this.getStagePattern(phase);
-
     // 해당 페이즈의 모든 예정 경기 조회 (팀 정보 포함)
-    const matches = await pool.query(
-      `SELECT id, home_team_id, away_team_id FROM matches
-       WHERE season_id = $1 AND status = '예정'
-       AND stage LIKE $2
-       ORDER BY id`,
-      [seasonId, `%${stagePattern}%`]
-    );
+    const matches = phase === '마전국기'
+      ? await pool.query(
+          `SELECT m.id, m.home_team_id, m.away_team_id FROM matches m
+           JOIN tournaments t ON m.tournament_id = t.id
+           WHERE m.season_id = $1 AND t.type = '마전국기' AND m.status = '예정'
+           ORDER BY m.id`,
+          [seasonId]
+        )
+      : await pool.query(
+          `SELECT id, home_team_id, away_team_id FROM matches
+           WHERE season_id = $1 AND status = '예정'
+           AND stage LIKE $2
+           ORDER BY id`,
+          [seasonId, `%${this.getStagePattern(phase)}%`]
+        );
 
     if (matches.rows.length === 0) return;
 
@@ -404,14 +424,19 @@ export class SeasonScheduler {
   // =============================================
 
   private async checkPhaseCompletion(seasonId: number, phase: string) {
-    const stagePattern = this.getStagePattern(phase);
-
-    const remaining = await pool.query(
-      `SELECT COUNT(*) as cnt FROM matches
-       WHERE season_id = $1 AND status = '예정'
-       AND stage LIKE $2`,
-      [seasonId, `%${stagePattern}%`]
-    );
+    const remaining = phase === '마전국기'
+      ? await pool.query(
+          `SELECT COUNT(*) as cnt FROM matches m
+           JOIN tournaments t ON m.tournament_id = t.id
+           WHERE m.season_id = $1 AND t.type = '마전국기' AND m.status = '예정'`,
+          [seasonId]
+        )
+      : await pool.query(
+          `SELECT COUNT(*) as cnt FROM matches
+           WHERE season_id = $1 AND status = '예정'
+           AND stage LIKE $2`,
+          [seasonId, `%${this.getStagePattern(phase)}%`]
+        );
 
     const remainingCount = parseInt(remaining.rows[0].cnt);
 
@@ -755,7 +780,7 @@ export class SeasonScheduler {
       case '봄리그': return '봄리그';
       case 'AR상단배': return 'AR상단배';
       case '여름리그': return '여름리그';
-      case '마전국기': return '%'; // 마전국기는 조별/8강/4강/결승 등 여러 stage
+      case '마전국기': return '마전국기_ALL'; // 마전국기는 별도 처리 (조별/8강/4강/결승)
       default: return phase;
     }
   }

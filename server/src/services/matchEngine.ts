@@ -963,6 +963,30 @@ export async function simulateMatch(matchId: number): Promise<MatchResult> {
     [m.home_team_id, m.away_team_id]
   );
 
+  // ---- 감독 평판 변동 ----
+  // 연습경기가 아닌 경우에만 (tournament_id 있는 경우)
+  if (m.tournament_id) {
+    const winTeamId = homeScore > awayScore ? m.home_team_id : awayScore > homeScore ? m.away_team_id : null;
+    const loseTeamId = homeScore > awayScore ? m.away_team_id : awayScore > homeScore ? m.home_team_id : null;
+    if (winTeamId) {
+      // 승리 팀 감독 평판 +1~2
+      await pool.query(
+        `UPDATE users SET reputation = LEAST(reputation + 1, 100)
+         WHERE team_id = $1 AND role != 'admin'`, [winTeamId]
+      );
+    }
+    if (loseTeamId) {
+      // 대패 시 감독 평판 감소 (3점 이상 차이)
+      const scoreDiff = Math.abs(homeScore - awayScore);
+      if (scoreDiff >= 3) {
+        await pool.query(
+          `UPDATE users SET reputation = GREATEST(reputation - 1, 0)
+           WHERE team_id = $1 AND role != 'admin'`, [loseTeamId]
+        );
+      }
+    }
+  }
+
   // 관중 수입
   const ticketIncome = attendance * 500; // 500원/명
   await pool.query('UPDATE teams SET budget = budget + $1 WHERE id = $2', [ticketIncome, m.home_team_id]);

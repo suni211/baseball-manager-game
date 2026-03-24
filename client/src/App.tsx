@@ -19,6 +19,7 @@ import StadiumPage from './pages/StadiumPage';
 import LeaguePage from './pages/LeaguePage';
 import TeamDetailPage from './pages/TeamDetailPage';
 import LiveMatchPage from './pages/LiveMatchPage';
+import ManagerPage from './pages/ManagerPage';
 
 interface User {
   id: number;
@@ -83,6 +84,13 @@ function App() {
     localStorage.setItem('token', token);
   };
 
+  const handleTeamChange = (teamId: number | null, token: string) => {
+    const updated = { ...user!, teamId };
+    setUser(updated);
+    localStorage.setItem('user', JSON.stringify(updated));
+    localStorage.setItem('token', token);
+  };
+
   return (
     <BrowserRouter>
       {user && <Navbar user={user} onLogout={handleLogout} />}
@@ -99,7 +107,7 @@ function App() {
           } />
           <Route path="/dashboard" element={
             !user ? <Navigate to="/login" /> :
-            !user.teamId ? <Navigate to="/select-team" /> :
+            !user.teamId ? <Navigate to="/manager" /> :
             <DashboardPage user={user} />
           } />
           <Route path="/roster" element={user?.teamId ? <RosterPage user={user} /> : <Navigate to="/login" />} />
@@ -116,6 +124,7 @@ function App() {
           <Route path="/league" element={user ? <LeaguePage /> : <Navigate to="/login" />} />
           <Route path="/team/:id" element={user ? <TeamDetailPage /> : <Navigate to="/login" />} />
           <Route path="/live/:id" element={user ? <LiveMatchPage /> : <Navigate to="/login" />} />
+          <Route path="/manager" element={user ? <ManagerPage user={user} onTeamChange={handleTeamChange} /> : <Navigate to="/login" />} />
           <Route path="/admin" element={user?.role === 'admin' ? <AdminPage /> : <Navigate to="/login" />} />
           <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
         </Routes>

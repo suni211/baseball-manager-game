@@ -500,6 +500,7 @@ CREATE TABLE IF NOT EXISTS manager_transfers (
   to_team_id INTEGER REFERENCES teams(id),
   reputation_at_transfer INTEGER,
   season_id INTEGER REFERENCES seasons(id),
+  reason VARCHAR(50) DEFAULT '자진이적',
   transferred_at TIMESTAMP DEFAULT NOW()
 );
 

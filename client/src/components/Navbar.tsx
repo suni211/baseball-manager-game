@@ -20,6 +20,7 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
     { path: '/tactics', label: '전술' },
     { path: '/lineup', label: '타순' },
     { path: '/stadium', label: '구장' },
+    { path: '/manager', label: '감독' },
   ];
 
   if (user.role === 'admin') {
@@ -61,7 +62,23 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
           }}>
             고교야구 감독
           </Link>
-          {user.teamId && links.map(link => (
+          {user.teamId ? links.map(link => (
+            <Link
+              key={link.path}
+              to={link.path}
+              style={{
+                color: isActive(link.path) ? 'var(--blue-light)' : 'var(--text-muted)',
+                fontSize: 13,
+                fontWeight: isActive(link.path) ? 700 : 500,
+                padding: '17px 0',
+                borderBottom: isActive(link.path) ? '2px solid var(--blue)' : '2px solid transparent',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {link.label}
+            </Link>
+          )) : [{ path: '/manager', label: '팀 찾기' }].map(link => (
             <Link
               key={link.path}
               to={link.path}

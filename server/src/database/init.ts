@@ -10,6 +10,12 @@ export async function initDatabase() {
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     await pool.query(schema);
+
+    // 마이그레이션: manager_transfers에 reason 컬럼 추가
+    await pool.query(`
+      ALTER TABLE manager_transfers ADD COLUMN IF NOT EXISTS reason VARCHAR(50) DEFAULT '자진이적'
+    `).catch(() => {});
+
     console.log('DB 스키마 초기화 완료');
     await initTeams();
     console.log('초기 팀 데이터 삽입 완료');

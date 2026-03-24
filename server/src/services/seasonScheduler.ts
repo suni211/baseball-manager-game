@@ -689,6 +689,9 @@ export class SeasonScheduler {
   // =============================================
 
   async advancePhase(seasonId: number) {
+    // 페이즈 전환 시 감독 경질 체크
+    await this.checkManagerFiring(seasonId);
+
     const season = await pool.query('SELECT current_phase FROM seasons WHERE id = $1', [seasonId]);
     if (season.rows.length === 0) return;
 
@@ -808,5 +811,80 @@ export class SeasonScheduler {
     this.isRunning = false;
     this.stopTimers();
     console.log('[시즌스케줄러] 중지됨');
+  }
+
+  // =============================================
+  // 감독 경질 체크 (페이즈 전환 시)
+  // =============================================
+
+  private async checkManagerFiring(seasonId: number) {
+    try {
+      // 유저가 소유한 팀들의 성적 확인
+      const ownedTeams = await pool.query(
+        `SELECT t.id as team_id, t.name as team_name, t.owner_id, u.username, u.reputation,
+                (SELECT ROUND(AVG(
+                  CASE WHEN p.is_pitcher THEN (p.velocity + p.control_stat + p.stamina + p.breaking_ball + p.mental) / 5.0
+                       ELSE (p.contact + p.power + p.eye + p.speed + p.fielding) / 5.0 END
+                )::numeric, 1) FROM players p WHERE p.team_id = t.id AND p.roster_status = '선발로스터') as team_overall,
+                COALESCE(SUM(tt.wins), 0) as wins,
+                COALESCE(SUM(tt.losses), 0) as losses
+         FROM teams t
+         JOIN users u ON t.owner_id = u.id
+         LEFT JOIN tournament_teams tt ON t.id = tt.team_id
+         LEFT JOIN tournaments tn ON tt.tournament_id = tn.id AND tn.season_id = $1
+         WHERE t.owner_id IS NOT NULL AND u.role != 'admin'
+         GROUP BY t.id, t.name, t.owner_id, u.username, u.reputation`,
+        [seasonId]
+      );
+
+      for (const team of ownedTeams.rows) {
+        const totalGames = parseInt(team.wins) + parseInt(team.losses);
+        if (totalGames < 5) continue; // 최소 5경기 이상이어야 경질 판정
+
+        const winRate = parseInt(team.wins) / totalGames;
+        const teamOverall = parseFloat(team.team_overall) || 50;
+
+        // 팀 전력 대비 기대 승률 계산
+        // 전력 60 이상이면 기대 승률 0.45+, 전력 70이면 0.5+
+        const expectedWinRate = Math.max(0.3, (teamOverall - 30) / 80);
+        const underperformance = expectedWinRate - winRate;
+
+        // 기대 승률보다 15% 이상 낮으면 경질 위험
+        if (underperformance > 0.15) {
+          // 경질 확률: 기대 대비 차이가 클수록 높음
+          const fireChance = Math.min(80, Math.round(underperformance * 300));
+          const roll = Math.random() * 100;
+
+          console.log(`[경질체크] ${team.team_name} (${team.username}) - 승률: ${(winRate * 100).toFixed(1)}%, 기대: ${(expectedWinRate * 100).toFixed(1)}%, 경질확률: ${fireChance}%`);
+
+          if (roll < fireChance) {
+            // 경질!
+            console.log(`[경질] ${team.username} 감독이 ${team.team_name}에서 경질되었습니다!`);
+
+            await pool.query('UPDATE teams SET owner_id = NULL WHERE id = $1', [team.team_id]);
+            await pool.query('UPDATE users SET team_id = NULL WHERE id = $1', [team.owner_id]);
+            await pool.query('UPDATE users SET reputation = GREATEST(reputation - 10, 0) WHERE id = $1', [team.owner_id]);
+
+            await pool.query(
+              `INSERT INTO manager_transfers (user_id, from_team_id, to_team_id, reputation_at_transfer, season_id, reason)
+               VALUES ($1, $2, NULL, $3, $4, '경질')`,
+              [team.owner_id, team.team_id, team.reputation, seasonId]
+            );
+
+            await pool.query(
+              `INSERT INTO game_news (title, content, category, related_team_id)
+               VALUES ($1, $2, '감독이동', $3)`,
+              [
+                `${team.username} 감독 경질`,
+                `${team.team_name}의 ${team.username} 감독이 부진한 성적으로 경질되었습니다. (승률: ${(winRate * 100).toFixed(1)}%)`,
+                team.team_id
+              ]
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[시즌스케줄러] 감독 경질 체크 오류:', error);
+    }
   }
 }

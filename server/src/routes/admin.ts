@@ -288,8 +288,8 @@ router.post('/friendly-match', async (req: AuthRequest, res: Response) => {
 
     // 연습경기 생성 (tournament_id 없이)
     const match = await pool.query(
-      `INSERT INTO matches (season_id, home_team_id, away_team_id, match_date, status, round, phase)
-       VALUES ($1, $2, $3, NOW(), '진행중', '연습경기', '연습경기') RETURNING id`,
+      `INSERT INTO matches (season_id, home_team_id, away_team_id, match_date, status, round, stage)
+       VALUES ($1, $2, $3, NOW(), '진행중', 0, '연습경기') RETURNING id`,
       [seasonId, homeTeamId, awayTeamId]
     );
     const matchId = match.rows[0].id;
